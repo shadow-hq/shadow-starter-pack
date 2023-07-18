@@ -4,7 +4,7 @@ use clap::Args;
 
 pub use crate::core::actions::fork::ForkError;
 use crate::resources::shadow::LocalShadowStore;
-use ethers::providers::{Http, Provider};
+use ethers::providers::{Provider, Ws};
 
 #[derive(Args)]
 pub struct Fork {}
@@ -14,8 +14,11 @@ impl Fork {
         let eth_rpc_url = env!("ETH_RPC_URL", "Please set an ETH_RPC_URL").to_owned();
 
         // Build the provider
-        let provider =
-            Provider::<Http>::try_from(&eth_rpc_url).expect("Please set a valid ETH_RPC_URL");
+        let provider = Provider::<Ws>::connect(
+            "wss://eth-mainnet.g.alchemy.com/v2/fIKlGd3vwbRj1O3gUuV8HpjHkNAZr93J",
+        )
+        .await
+        .map_err(ForkError::ProviderError)?;
 
         // Build the resources
         let shadow_resource = LocalShadowStore::new(
