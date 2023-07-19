@@ -7,26 +7,34 @@ import "../src/UniswapV2Router02/contracts/UniswapV2Router02.sol";
 
 contract UniswapV2Router02Test is Test {
     event Trade(
-        string platformName,
-        address contractAddress,
-        address tokenInAddress,
-        address tokenOutAddress,
-        uint256 amountIn,
-        uint256 amountOut,
-        address senderAddress
+        string project,
+        string version,
+        TokenAmount tokenA,
+        TokenAmount tokenB,
+        uint256 amountUsd,
+        address taker,
+        address maker,
+        address exchangeContractAddress
     );
 
-    function testSwapExactTokensForTokens_emitsTrade() public {
-        // Replay transaction: 0x885f7c26504b7e8048b0296d85f754dfb2c6fd9924199fb7a66495500280318f
-        IUniswapV2Router02 router = deployAtBlock(11508784);
-        address msgSender = address(0x0F4ee9631f4be0a63756515141281A3E2B293Bbe);
+    struct TokenAmount {
+        address tokenAddress;
+        string symbol;
+        uint256 decimals;
+        uint256 amount;
+    }
+
+    function testSwapExactTokensForETH_emitsTrade() public {
+        // Replay transaction: 0x833f712deda53fa12f632de4c03d2e3110a0539d2fc2b709cd305f5943eb3321
+        IUniswapV2Router02 router = deployAtBlock(17724607);
+        address msgSender = address(0x351307bf5b6B3FecCf0f325536626E90093a7BC2);
 
         // Tokens and amounts
-        address tokenIn = address(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2);
-        address tokenOut = address(0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48);
-        uint256 amountIn = 118494640556767876660;
-        uint256 amountOutMin = 72605940477;
-        uint256 amountOutExpected = 72648946181;
+        address tokenIn = address(0x9732EE9a44938cce991Ba4dE5F86BB4aFC18b6aD);
+        address tokenOut = address(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2);
+        uint256 amountIn = 26534189234151358333689522;
+        uint256 amountOutMin = 257924828650822463;
+        uint256 amountOutExpected = 260662035875015518;
 
         // Set up the VM
         vm.startPrank(msgSender);
@@ -39,10 +47,19 @@ contract UniswapV2Router02Test is Test {
 
         // Expect the Trade event to be emitted
         vm.expectEmit(address(router));
-        emit Trade("uniswap-v2", address(router), tokenIn, tokenOut, amountIn, amountOutExpected, msgSender);
+        emit Trade(
+            "uniswap",
+            "v2",
+            TokenAmount(tokenIn, "PAUL", 18, amountIn),
+            TokenAmount(tokenOut, "WETH", 18, amountOutExpected),
+            498335242,
+            address(0x351307bf5b6B3FecCf0f325536626E90093a7BC2),
+            address(0x30B486075dcd057B4959cF1aAf733870cbe936c8),
+            address(router)
+        );
 
         // Execute the swap
-        router.swapExactTokensForTokens(amountIn, amountOutMin, path, msgSender, 1608713475);
+        router.swapExactTokensForETH(amountIn, amountOutMin, path, msgSender, 1689739559);
     }
 
     function deployAtBlock(uint256 blockNumber) internal returns (IUniswapV2Router02 router) {
