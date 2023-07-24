@@ -1,6 +1,7 @@
 pragma solidity =0.6.6;
 pragma experimental ABIEncoderV2;
 
+import "./interfaces/AggregatorV3Interface.sol";
 import "./interfaces/IUniswapV2Factory.sol";
 import "./interfaces/IUniswapV2Pair.sol";
 import "./interfaces/IUniswapV2Router02.sol";
@@ -28,6 +29,15 @@ contract UniswapV2Router02 is IUniswapV2Router02 {
 
     receive() external payable {
         assert(msg.sender == WETH); // only accept ETH via fallback from the WETH contract
+    }
+
+    event Trade(string project, string version, TokenAmount tokenA, TokenAmount tokenB, uint256 amountUsd, address taker, address maker, address exchangeContractAddress);
+
+    struct TokenAmount {
+        address tokenAddress;
+        string symbol;
+        uint256 decimals;
+        uint256 amount;
     }
 
     // **** ADD LIQUIDITY ****
@@ -305,6 +315,20 @@ contract UniswapV2Router02 is IUniswapV2Router02 {
         _swap(amounts, path, address(this));
         IWETH(WETH).withdraw(amounts[amounts.length - 1]);
         TransferHelper.safeTransferETH(to, amounts[amounts.length - 1]);
+
+        TokenAmount memory tokenA =
+            TokenAmount(path[0], IERC20(path[0]).symbol(), IERC20(path[0]).decimals(), amounts[0]);
+        TokenAmount memory tokenB =
+            TokenAmount(WETH, IERC20(WETH).symbol(), IERC20(WETH).decimals(), amounts[amounts.length - 1]);
+        uint256 amountUsd = amounts[amounts.length - 1] * uint256(getPriceETH()) * 1e6 / 1e18 / 1e8;
+        emit Trade("uniswap", "v2", tokenA, tokenB, amountUsd, msg.sender, getLastPairAddress(path), address(this));
+    }
+
+    // Get the current price of ETH from Chainlink's ETH/USD oracle (8 decimals)
+    function getPriceETH() internal view returns (int256) {
+        AggregatorV3Interface dataFeed = AggregatorV3Interface(0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419);
+        (, int256 answer,,,) = dataFeed.latestRoundData();
+        return answer;
     }
 
     function swapETHForExactTokens(uint256 amountOut, address[] calldata path, address to, uint256 deadline)
@@ -402,6 +426,16 @@ contract UniswapV2Router02 is IUniswapV2Router02 {
     }
 
     // **** LIBRARY FUNCTIONS ****
+
+    // Get the pool address of the last swap in the path
+    function getLastPairAddress(address[] memory path) internal view returns (address lastPair) {
+        for (uint256 i; i < path.length - 1; i++) {
+            (address input, address output) = (path[i], path[i + 1]);
+            lastPair = UniswapV2Library.pairFor(factory, input, output);
+        }
+        return lastPair;
+    }
+
     function quote(uint256 amountA, uint256 reserveA, uint256 reserveB)
         public
         pure
