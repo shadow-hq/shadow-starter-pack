@@ -1,0 +1,107 @@
+From cc6745c77b1147aadb4bbd597134f4e22711e2f6 Mon Sep 17 00:00:00 2001
+From: Emily Hsia <emily.j.hsia@gmail.com>
+Date: Mon, 24 Jul 2023 12:28:16 -0400
+Subject: [PATCH] feat(examples): Update the Uniswap V2 Router contract with
+ the Dune dex.trades example
+
+---
+ .../contracts/UniswapV2Router02.sol           | 34 +++++++++++++++++++
+ .../interfaces/AggregatorV3Interface.sol      | 20 +++++++++++
+ 2 files changed, 54 insertions(+)
+ create mode 100644 contracts/src/UniswapV2Router02/contracts/interfaces/AggregatorV3Interface.sol
+
+diff --git a/contracts/src/UniswapV2Router02/contracts/UniswapV2Router02.sol b/contracts/src/UniswapV2Router02/contracts/UniswapV2Router02.sol
+index b183bc5..8bb1227 100644
+--- a/contracts/src/UniswapV2Router02/contracts/UniswapV2Router02.sol
++++ b/contracts/src/UniswapV2Router02/contracts/UniswapV2Router02.sol
+@@ -1,6 +1,7 @@
+ pragma solidity =0.6.6;
+ pragma experimental ABIEncoderV2;
+ 
++import "./interfaces/AggregatorV3Interface.sol";
+ import "./interfaces/IUniswapV2Factory.sol";
+ import "./interfaces/IUniswapV2Pair.sol";
+ import "./interfaces/IUniswapV2Router02.sol";
+@@ -30,6 +31,15 @@ contract UniswapV2Router02 is IUniswapV2Router02 {
+         assert(msg.sender == WETH); // only accept ETH via fallback from the WETH contract
+     }
+ 
++    event Trade(string project, string version, TokenAmount tokenA, TokenAmount tokenB, uint256 amountUsd, address taker, address maker, address exchangeContractAddress);
++
++    struct TokenAmount {
++        address tokenAddress;
++        string symbol;
++        uint256 decimals;
++        uint256 amount;
++    }
++
+     // **** ADD LIQUIDITY ****
+     function _addLiquidity(
+         address tokenA,
+@@ -305,6 +315,20 @@ contract UniswapV2Router02 is IUniswapV2Router02 {
+         _swap(amounts, path, address(this));
+         IWETH(WETH).withdraw(amounts[amounts.length - 1]);
+         TransferHelper.safeTransferETH(to, amounts[amounts.length - 1]);
++
++        TokenAmount memory tokenA =
++            TokenAmount(path[0], IERC20(path[0]).symbol(), IERC20(path[0]).decimals(), amounts[0]);
++        TokenAmount memory tokenB =
++            TokenAmount(WETH, IERC20(WETH).symbol(), IERC20(WETH).decimals(), amounts[amounts.length - 1]);
++        uint256 amountUsd = amounts[amounts.length - 1] * uint256(getPriceETH()) * 1e6 / 1e18 / 1e8;
++        emit Trade("uniswap", "v2", tokenA, tokenB, amountUsd, msg.sender, getLastPairAddress(path), address(this));
++    }
++
++    // Get the current price of ETH from Chainlink's ETH/USD oracle (8 decimals)
++    function getPriceETH() internal view returns (int256) {
++        AggregatorV3Interface dataFeed = AggregatorV3Interface(0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419);
++        (, int256 answer,,,) = dataFeed.latestRoundData();
++        return answer;
+     }
+ 
+     function swapETHForExactTokens(uint256 amountOut, address[] calldata path, address to, uint256 deadline)
+@@ -402,6 +426,16 @@ contract UniswapV2Router02 is IUniswapV2Router02 {
+     }
+ 
+     // **** LIBRARY FUNCTIONS ****
++
++    // Get the pool address of the last swap in the path
++    function getLastPairAddress(address[] memory path) internal view returns (address lastPair) {
++        for (uint256 i; i < path.length - 1; i++) {
++            (address input, address output) = (path[i], path[i + 1]);
++            lastPair = UniswapV2Library.pairFor(factory, input, output);
++        }
++        return lastPair;
++    }
++
+     function quote(uint256 amountA, uint256 reserveA, uint256 reserveB)
+         public
+         pure
+diff --git a/contracts/src/UniswapV2Router02/contracts/interfaces/AggregatorV3Interface.sol b/contracts/src/UniswapV2Router02/contracts/interfaces/AggregatorV3Interface.sol
+new file mode 100644
+index 0000000..2588b9f
+--- /dev/null
++++ b/contracts/src/UniswapV2Router02/contracts/interfaces/AggregatorV3Interface.sol
+@@ -0,0 +1,20 @@
++// SPDX-License-Identifier: MIT
++pragma solidity ^0.6.0;
++
++interface AggregatorV3Interface {
++    function decimals() external view returns (uint8);
++
++    function description() external view returns (string memory);
++
++    function version() external view returns (uint256);
++
++    function getRoundData(uint80 _roundId)
++        external
++        view
++        returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound);
++
++    function latestRoundData()
++        external
++        view
++        returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound);
++}
+-- 
+2.38.2
+
