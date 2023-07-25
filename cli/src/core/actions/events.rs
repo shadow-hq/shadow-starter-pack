@@ -139,6 +139,6 @@ fn get_event(
         .events
         .iter()
         .flat_map(|(_, events)| events)
-        .find(|e| e.signature() == event_signature)
+        .find(|e| e.name == event_signature)
         .cloned()
 }
