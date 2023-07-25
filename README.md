@@ -33,7 +33,7 @@ $ git clone git@github.com:shadow-hq/shadow-starter-pack.git
 2. Install the `shadow` CLI tool
 ```bash
 # In the root of the project repo
-$ cargo install --path cli
+$ cargo install --git https://github.com/shadow-hq/shadow
 ```
 3. Set environment variables
 ```
