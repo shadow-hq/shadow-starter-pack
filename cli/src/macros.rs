@@ -3,7 +3,7 @@ macro_rules! test_fixture {
     ($cname:expr, $fname:expr) => {
         format!(
             "{}/src/{}/fixtures/{}",
-            env!("CARGO_MANIFEST_DIR"),
+            std::env::var("CARGO_MANIFEST_DIR").unwrap(),
             $cname,
             $fname
         )

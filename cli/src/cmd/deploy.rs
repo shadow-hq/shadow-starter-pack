@@ -26,7 +26,7 @@ pub struct Deploy {
 /// and the local file-based shadow store.
 impl Deploy {
     pub async fn run(&self) -> Result<(), DeployError> {
-        let http_rpc_url = env!("ETH_RPC_URL", "Please set an ETH_RPC_URL").to_owned();
+        let http_rpc_url = std::env::var("ETH_RPC_URL").expect("Please set an ETH_RPC_URL");
 
         // Parse the contract string
         let (file_name, contract_name) = parse_contract_string(&self.contract);
@@ -37,10 +37,8 @@ impl Deploy {
 
         // Build the resources
         let artifacts_resource = LocalArtifactStore::new("contracts/out".to_owned());
-        let etherscan_resource = Etherscan::new(String::from(env!(
-            "ETHERSCAN_API_KEY",
-            "Please set an ETHERSCAN_API_KEY"
-        )));
+        let etherscan_resource =
+            Etherscan::new(env::var("ETHERSCAN_API_KEY").expect("Please set an ETHERSCAN_API_KEY"));
         let shadow_resource = LocalShadowStore::new(
             env::current_dir()
                 .unwrap()
