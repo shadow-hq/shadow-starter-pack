@@ -412,7 +412,7 @@ mod tests {
             artifacts_resource,
             etherscan_resource,
             shadow_resource,
-            http_rpc_url: env!("ETH_RPC_URL", "Please set an ETH_RPC_URL").to_owned(),
+            http_rpc_url: std::env::var("ETH_RPC_URL").unwrap(),
         };
         deploy.run().await.unwrap();
 

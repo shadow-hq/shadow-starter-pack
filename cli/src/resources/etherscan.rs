@@ -58,10 +58,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn can_get_contract_creation() {
-        let etherscan = Etherscan::new(String::from(env!(
-            "ETHERSCAN_API_KEY",
-            "Please set an ETHERSCAN_API_KEY"
-        )));
+        let etherscan = Etherscan::new(std::env::var("ETHERSCAN_API_KEY").unwrap());
         let response = etherscan
             .get_contract_creation(&String::from("0x7a250d5630b4cf539739df2c5dacb4c659f2488d"))
             .await
@@ -86,10 +83,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn can_get_source_code() {
-        let etherscan = Etherscan::new(String::from(env!(
-            "ETHERSCAN_API_KEY",
-            "Please set an ETHERSCAN_API_KEY"
-        )));
+        let etherscan = Etherscan::new(std::env::var("ETHERSCAN_API_KEY").unwrap());
         let response = etherscan
             .get_source_code(&String::from("0x7a250d5630b4cf539739df2c5dacb4c659f2488d"))
             .await

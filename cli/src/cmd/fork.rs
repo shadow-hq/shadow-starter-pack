@@ -25,11 +25,11 @@ pub struct Fork {
 /// under the hood, using the local file-based shadow store.
 impl Fork {
     pub async fn run(&self) -> Result<(), ForkError> {
-        let http_rpc_url = env!("ETH_RPC_URL", "Please set an ETH_RPC_URL").to_owned();
+        let http_rpc_url = env::var("ETH_RPC_URL").expect("Please set an ETH_RPC_URL");
 
         // Build the provider
         let provider =
-            Provider::<Ws>::connect(env!("WS_RPC_URL", "Please set an WS_RPC_URL").to_owned())
+            Provider::<Ws>::connect(env::var("WS_RPC_URL").expect("Please set a WS_RPC_URL"))
                 .await
                 .map_err(ForkError::ProviderError)?;
 

@@ -415,7 +415,7 @@ mod tests {
 
     async fn erc20_transfer_log() -> Result<Log, Box<dyn std::error::Error>> {
         // Build the provider
-        let http_rpc_url = env!("ETH_RPC_URL", "Please set an ETH_RPC_URL").to_owned();
+        let http_rpc_url = std::env::var("ETH_RPC_URL").expect("Please set an ETH_RPC_URL");
         let provider =
             Provider::<Http>::try_from(&http_rpc_url).expect("Please set a valid ETH_RPC_URL");
 
@@ -464,7 +464,7 @@ mod tests {
 
     async fn seaport_order_fulfilled_log() -> Result<Log, Box<dyn std::error::Error>> {
         // Build the provider
-        let http_rpc_url = env!("ETH_RPC_URL", "Please set an ETH_RPC_URL").to_owned();
+        let http_rpc_url = std::env::var("ETH_RPC_URL").expect("Please set an ETH_RPC_URL");
         let provider =
             Provider::<Http>::try_from(&http_rpc_url).expect("Please set a valid ETH_RPC_URL");
 
