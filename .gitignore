@@ -24,3 +24,6 @@ shadow.json
 
 # VSCode
 .vscode/
+
+# ide
+.idea

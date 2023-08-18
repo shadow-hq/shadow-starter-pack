@@ -68,6 +68,9 @@ impl ToEthAbiParamType for DynSolType {
                 }
                 Ok(ParamType::Tuple(param_types))
             }
+            DynSolType::Function => {
+                Err("Function type not supported".into())
+            }
         }
     }
 }
