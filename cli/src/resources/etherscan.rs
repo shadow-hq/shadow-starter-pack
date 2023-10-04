@@ -23,7 +23,7 @@ impl EtherscanResource for Etherscan {
         address: &str,
     ) -> Result<GetContractCreationResponse, reqwest::Error> {
         let url = format!(
-            "https://api.etherscan.io/api?module=contract&action=getcontractcreation&contractaddresses={}&apikey={}",
+            "https://api-goerli.etherscan.io/api?module=contract&action=getcontractcreation&contractaddresses={}&apikey={}",
             address, self.api_key
         );
         let response = reqwest::get(&url)
@@ -39,7 +39,7 @@ impl EtherscanResource for Etherscan {
         address: &str,
     ) -> Result<GetSourceCodeResponse, reqwest::Error> {
         let url = format!(
-            "https://api.etherscan.io/api?module=contract&action=getsourcecode&address={}&apikey={}",
+            "https://api-goerli.etherscan.io/api?module=contract&action=getsourcecode&address={}&apikey={}",
             address, self.api_key
         );
         let response = reqwest::get(&url)

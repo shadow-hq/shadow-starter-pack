@@ -77,37 +77,33 @@ impl<E: EtherscanResource, A: ArtifactsResource, S: ShadowResource, P: JsonRpcCl
         // Get the artifact bytecode
         let artifact_bytecode = self.get_artifact_bytecode()?;
 
+        dbg!(&self.http_rpc_url);
+
         // Fetch the contract creation metadata from Etherscan
-        let contract_creation_metadata = self.fetch_contract_creation_metadata().await?;
+        // let contract_creation_metadata = self.fetch_contract_creation_metadata().await?;
 
         // Fetch the constructor arguments from Etherscan
-        let constructor_arguments = self.fetch_constructor_arguments().await?;
+        let constructor_arguments = "000000000000000000000000753e22d4e112a4d8b07df9c4c578b116e3b48792".to_string();
 
         // Fetch the contract creation transaction
-        let contract_creation_transaction = self
-            .fetch_contract_creation_transaction(&contract_creation_metadata.tx_hash)
-            .await?;
+        // let contract_creation_transaction = self
+        //     .fetch_contract_creation_transaction(&contract_creation_metadata.tx_hash)
+        //     .await?;
 
         // Start a temporary fork to deploy the shadow contract
         let (api, anvil_handle) = self
-            .start_anvil(
-                contract_creation_transaction
-                    .block_number
-                    .map(|n| U64::from(n.as_u64())),
-            )
+            .start_anvil(Some(U64::from(9172423 as u64)))
             .await?;
 
         // Construct the init code
-        let init_code = self
-            .construct_init_code(&artifact_bytecode, &constructor_arguments)
-            .await?;
+        let init_code = self.construct_init_code(&artifact_bytecode, &constructor_arguments).await?;
 
         // Deploy the shadow contract and get the runtime bytecode
         let runtime_bytecode = self
             .get_runtime_bytecode(
                 &api,
                 &init_code,
-                &contract_creation_metadata.contract_creator,
+                "0x1D8b7246BAf0fe9c542f8c695cB417894Ce8b384",
             )
             .await?;
 
@@ -272,6 +268,9 @@ impl<E: EtherscanResource, A: ArtifactsResource, S: ShadowResource, P: JsonRpcCl
             .send_transaction(request)
             .await
             .map_err(DeployError::BlockchainError)?;
+        println!("{:?}", deploy_tx_hash);
+
+
 
         // Mine the transaction
         api.evm_mine(None)
@@ -283,6 +282,7 @@ impl<E: EtherscanResource, A: ArtifactsResource, S: ShadowResource, P: JsonRpcCl
             .transaction_receipt(deploy_tx_hash)
             .await
             .map_err(DeployError::BlockchainError)?;
+        println!("{:?}", deploy_tx_receipt);
         let deployed_contract_address = match deploy_tx_receipt {
             Some(receipt) => match receipt.contract_address {
                 Some(address) => address,
@@ -322,7 +322,7 @@ fn anvil_args(http_rpc_url: &str, block_number: &str) -> NodeArgs {
         "--gas-price",
         "0",
         "--no-mining",
-        "--silent",
+        // "--silent",
         "--disable-gas-limit",
         "--hardfork",
         "latest",

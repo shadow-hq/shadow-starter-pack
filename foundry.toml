@@ -8,3 +8,8 @@ fs_permissions = [{ access = "read", path = "./contracts/out"}]
 evm_version = "shanghai"
 
 # See more config options https://github.com/foundry-rs/foundry/tree/master/config
+
+remappings = [
+    "openzeppelin=contracts/src/Party/lib/openzeppelin-contracts",
+    "solmate=contracts/src/Party/lib/solmate/src",
+]
