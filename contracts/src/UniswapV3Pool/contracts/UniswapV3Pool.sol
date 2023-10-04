@@ -115,11 +115,12 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
     }
 
     constructor() {
-        int24 _tickSpacing;
-        (factory, token0, token1, fee, _tickSpacing) = IUniswapV3PoolDeployer(msg.sender).parameters();
-        tickSpacing = _tickSpacing;
-
-        maxLiquidityPerTick = Tick.tickSpacingToMaxLiquidityPerTick(_tickSpacing);
+        factory = address(0x1F98431c8aD98523631AE4a59f267346ea31F984);
+        token0 = address(0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48);
+        token1 = address(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2);
+        fee = 500;
+        tickSpacing = 10;
+        maxLiquidityPerTick = 1917569901783203986719870431555990;
     }
 
     /// @dev Common checks for valid tick inputs.
