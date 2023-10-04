@@ -68,12 +68,8 @@ contract NonfungiblePositionManager is
     /// @dev The address of the token descriptor contract, which handles generating token URIs for position tokens
     address private immutable _tokenDescriptor;
 
-    constructor(
-        address _factory,
-        address _WETH9,
-        address _tokenDescriptor_
-    ) ERC721Permit('Uniswap V3 Positions NFT-V1', 'UNI-V3-POS', '1') PeripheryImmutableState(_factory, _WETH9) {
-        _tokenDescriptor = _tokenDescriptor_;
+    constructor() ERC721Permit('Uniswap V3 Positions NFT-V1', 'UNI-V3-POS', '1') PeripheryImmutableState(address(0x1F98431c8aD98523631AE4a59f267346ea31F984), address(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2)) {
+        _tokenDescriptor = address(0xEe6A57eC80ea46401049E92587E52f5Ec1c24785);
     }
 
     /// @inheritdoc INonfungiblePositionManager
