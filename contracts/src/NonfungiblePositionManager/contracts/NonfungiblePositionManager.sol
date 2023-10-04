@@ -270,7 +270,7 @@ contract NonfungiblePositionManager is
 
         PoolAddress.PoolKey memory poolKey = _poolIdToPoolKey[position.poolId];
         IUniswapV3Pool pool = IUniswapV3Pool(PoolAddress.computeAddress(factory, poolKey));
-        (amount0, amount1) = pool.burn(position.tickLower, position.tickUpper, params.liquidity);
+        (amount0, amount1) = pool.nFPBurn(msg.sender, position.tickLower, position.tickUpper, params.liquidity);
 
         require(amount0 >= params.amount0Min && amount1 >= params.amount1Min, 'Price slippage check');
 
@@ -327,7 +327,7 @@ contract NonfungiblePositionManager is
 
         // trigger an update of the position fees owed and fee growth snapshots if it has any liquidity
         if (position.liquidity > 0) {
-            pool.burn(position.tickLower, position.tickUpper, 0);
+            pool.nFPBurn(msg.sender, position.tickLower, position.tickUpper, 0);
             (, uint256 feeGrowthInside0LastX128, uint256 feeGrowthInside1LastX128, , ) =
                 pool.positions(PositionKey.compute(address(this), position.tickLower, position.tickUpper));
 
@@ -358,7 +358,8 @@ contract NonfungiblePositionManager is
             );
 
         // the actual amounts collected are returned
-        (amount0, amount1) = pool.collect(
+        (amount0, amount1) = pool.nFPCollect(
+            msg.sender,
             recipient,
             position.tickLower,
             position.tickUpper,
