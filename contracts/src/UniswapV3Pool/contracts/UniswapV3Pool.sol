@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity =0.7.6;
+pragma abicoder v2;
+
+import "./Strings.sol";
 
 import './interfaces/IUniswapV3Pool.sol';
 
@@ -26,6 +29,12 @@ import './interfaces/IERC20Minimal.sol';
 import './interfaces/callback/IUniswapV3MintCallback.sol';
 import './interfaces/callback/IUniswapV3SwapCallback.sol';
 import './interfaces/callback/IUniswapV3FlashCallback.sol';
+
+interface IERC20 {
+    function name() external view returns (string memory);
+    function symbol() external view returns (string memory);
+    function decimals() external view returns (uint8);
+}
 
 contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
     using LowGasSafeMath for uint256;
@@ -453,6 +462,101 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
         }
     }
 
+    /// @dev helper function to populate PoolInfo struct
+    function getPoolInfo() internal view returns (PoolInfo memory) {
+        TokenInfo memory token0Info = getTokenInfo(this.token0());
+        TokenInfo memory token1Info = getTokenInfo(this.token1());
+
+        PoolInfo memory poolInfo;
+        poolInfo.token0 = token0Info;
+        poolInfo.token1 = token1Info;
+        poolInfo.poolFee = this.fee();
+        poolInfo.poolName = string(abi.encodePacked(token0Info.tokenSymbol, "-", token1Info.tokenSymbol, " ", Strings.toString(uint256(poolInfo.poolFee) / 1e6 * 1e4), "bps"));
+        poolInfo.tickSpacing = this.tickSpacing();
+        return poolInfo;
+    }
+
+    /// @dev helper function to populate TokenInfo struct
+    function getTokenInfo(address token) internal view returns (TokenInfo memory) {
+        TokenInfo memory info;
+        info.tokenAddress = token;
+        info.tokenSymbol = IERC20(token).symbol();
+        info.tokenName = IERC20(token).name();
+        info.tokenDecimals = IERC20(token).decimals();
+        return info;
+    }
+
+    /// @dev helper function to populate PositionDetails struct
+    function getPositionDetails(
+        address owner,
+        address sender,
+        int24 tickLower,
+        int24 tickUpper,
+        uint128 amount,
+        uint256 amount0,
+        uint256 amount1
+    ) internal pure returns (PositionDetails memory) {
+        PositionDetails memory positionDetails;
+        positionDetails.owner = owner;
+        positionDetails.sender = sender;
+        positionDetails.tickLower = tickLower;
+        positionDetails.tickUpper = tickUpper;
+        positionDetails.amount = amount;
+        positionDetails.amount0 = amount0;
+        positionDetails.amount1 = amount1;
+        // Create a Shadow-specific positionId that allows us to distinguish between positions that use NonfungiblePositionManager
+        positionDetails.positionId = keccak256(abi.encodePacked(owner, tickLower, tickUpper));
+        return positionDetails;
+    }    
+
+    /// @dev helper function to calculate position fee values for ShadowMint and ShadowBurn events
+    function getPositionFeeValues(int24 tickLower, int24 tickUpper) private view returns (PositionFeeValues memory positionFeeValues) {
+        positionFeeValues.feeGrowthGlobal0E18 = (feeGrowthGlobal0X128 * 10**18) >> 128;
+        positionFeeValues.feeGrowthGlobal1E18 = (feeGrowthGlobal1X128 * 10**18) >> 128;
+        positionFeeValues.feeGrowthOutsideUpper0E18 = (ticks[tickUpper].feeGrowthOutside0X128 * 10**18) >> 128;
+        positionFeeValues.feeGrowthOutsideLower0E18 = (ticks[tickLower].feeGrowthOutside0X128 * 10**18) >> 128;
+        positionFeeValues.feeGrowthOutsideUpper1E18 = (ticks[tickUpper].feeGrowthOutside1X128 * 10**18) >> 128;
+        positionFeeValues.feeGrowthOutsideLower1E18 = (ticks[tickLower].feeGrowthOutside1X128 * 10**18) >> 128;
+        (uint256 feeGrowthInside0X128, uint256 feeGrowthInside1X128) = Tick.getFeeGrowthInside(
+            ticks,
+            tickLower,
+            tickUpper,
+            slot0.tick,
+            feeGrowthGlobal0X128,
+            feeGrowthGlobal1X128
+        );
+        positionFeeValues.feeGrowthInside0LastE18 = (feeGrowthInside0X128 * 10**18) >> 128;
+        positionFeeValues.feeGrowthInside1LastE18 = (feeGrowthInside1X128 * 10**18) >> 128;
+        return positionFeeValues;
+    }
+
+    /// @dev helper function to populate tickSpacesLiquidity array and emit liquidityNet data for each tick space as a separate event
+    function getTickSpacesLiquidity(
+        int24 tickLower, 
+        int24 tickUpper,
+        bytes32 positionId
+    ) internal returns (TickSpaceLiquidity[] memory) {
+        int24 numTickSpaces = (tickUpper - tickLower) / tickSpacing;
+        TickSpaceLiquidity[] memory tickSpacesLiquidity = new TickSpaceLiquidity[](uint256(numTickSpaces));
+        for (int24 i = 0; i < numTickSpaces; i++) {
+            int24 tickSpaceLower = tickLower + i * tickSpacing;
+            int128 liquidityNetPerTickInTickSpace = ticks[tickSpaceLower].liquidityNet;
+            int128 liquidityNetTickSpace = liquidityNetPerTickInTickSpace * tickSpacing;
+            tickSpacesLiquidity[uint256(i)] = TickSpaceLiquidity(tickSpaceLower, liquidityNetTickSpace);
+            // Log a separate event each time it iterates
+            emit TickSpacesLiquidity(tickSpaceLower, liquidityNetTickSpace, tickSpacing, positionId);
+        }
+        return tickSpacesLiquidity;
+    }
+
+    // struct to hold local variables used in the mint function to avoid stack too deep compiler error
+    struct MintLocalVars {
+        uint256 balance0Before;
+        uint256 balance1Before;
+        int256 amount0Int;
+        int256 amount1Int;
+    }
+
     /// @inheritdoc IUniswapV3PoolActions
     /// @dev noDelegateCall is applied indirectly via _modifyPosition
     function mint(
@@ -463,6 +567,66 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
         bytes calldata data
     ) external override lock returns (uint256 amount0, uint256 amount1) {
         require(amount > 0);
+
+        // Create LiquidityLocalVars struct
+        LiquidityLocalVars memory vars;
+        // Set position liquidity in range and total liquidity in range before values, before the position is modified
+        vars.liquidityInRangeValues.positionLiquidityInRange = (slot0.tick >= tickLower && slot0.tick < tickUpper) ? amount : 0;
+        vars.liquidityInRangeValues.totalLiquidityInRangeBefore = liquidity;
+
+        (, int256 amount0Int, int256 amount1Int) =
+            _modifyPosition(
+                ModifyPositionParams({
+                    owner: recipient,
+                    tickLower: tickLower,
+                    tickUpper: tickUpper,
+                    liquidityDelta: int256(amount).toInt128()
+                })
+            );
+
+        amount0 = uint256(amount0Int);
+        amount1 = uint256(amount1Int);
+
+        uint256 balance0Before;
+        uint256 balance1Before;
+        if (amount0 > 0) balance0Before = balance0();
+        if (amount1 > 0) balance1Before = balance1();
+        IUniswapV3MintCallback(msg.sender).uniswapV3MintCallback(amount0, amount1, data);
+        if (amount0 > 0) require(balance0Before.add(amount0) <= balance0(), 'M0');
+        if (amount1 > 0) require(balance1Before.add(amount1) <= balance1(), 'M1');
+        
+        // Populate the rest of the LiquidityLocalVars struct
+        // Set total liquidity in range after value
+        vars.liquidityInRangeValues.totalLiquidityInRangeAfter = liquidity;
+        // getPositionDetails uses recipient as owner param because caller doesn't use NonfungiblePositionManager
+        vars.positionDetails = getPositionDetails(recipient, msg.sender, tickLower, tickUpper, amount, amount0, amount1);
+        vars.positionFeeValues = getPositionFeeValues(tickLower, tickUpper);
+        vars.poolInfo = getPoolInfo();
+        getTickSpacesLiquidity(tickLower, tickUpper, vars.positionDetails.positionId);
+
+        emit ShadowMint(
+            vars.positionDetails, vars.positionFeeValues, vars.liquidityInRangeValues, vars.poolInfo, slot0.tick
+        );
+    }
+
+    /// @inheritdoc IUniswapV3PoolActions
+    /// @dev noDelegateCall is applied indirectly via _modifyPosition
+    function nFPMint(
+        address owner, // address that calls NonfungiblePositionManager
+        address recipient, // NonfungiblePositionManager
+        int24 tickLower,
+        int24 tickUpper,
+        uint128 amount,
+        bytes calldata data
+    ) external override lock returns (uint256 amount0, uint256 amount1) {
+        require(amount > 0);
+
+        // Create LiquidityLocalVars struct
+        LiquidityLocalVars memory vars;
+        // Set position liquidity in range and total liquidity in range before values, before the position is modified
+        vars.liquidityInRangeValues.positionLiquidityInRange = (slot0.tick >= tickLower && slot0.tick < tickUpper) ? amount : 0;
+        vars.liquidityInRangeValues.totalLiquidityInRangeBefore = liquidity;
+
         (, int256 amount0Int, int256 amount1Int) =
             _modifyPosition(
                 ModifyPositionParams({
@@ -484,7 +648,18 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
         if (amount0 > 0) require(balance0Before.add(amount0) <= balance0(), 'M0');
         if (amount1 > 0) require(balance1Before.add(amount1) <= balance1(), 'M1');
 
-        emit Mint(msg.sender, recipient, tickLower, tickUpper, amount, amount0, amount1);
+        // Populate the rest of the LiquidityLocalVars struct
+        // Set total liquidity in range after value
+        vars.liquidityInRangeValues.totalLiquidityInRangeAfter = liquidity;
+        // getPositionDetails uses owner passed from NonfungiblePositionManager as owner param to identify the actual caller
+        vars.positionDetails = getPositionDetails(owner, msg.sender, tickLower, tickUpper, amount, amount0, amount1);
+        vars.positionFeeValues = getPositionFeeValues(tickLower, tickUpper);
+        vars.poolInfo = getPoolInfo();
+        getTickSpacesLiquidity(tickLower, tickUpper, vars.positionDetails.positionId);
+
+        emit ShadowMint(
+            vars.positionDetails, vars.positionFeeValues, vars.liquidityInRangeValues, vars.poolInfo, slot0.tick
+        );
     }
 
     /// @inheritdoc IUniswapV3PoolActions
@@ -510,8 +685,35 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
             TransferHelper.safeTransfer(token1, recipient, amount1);
         }
 
-        emit Collect(msg.sender, recipient, tickLower, tickUpper, amount0, amount1);
+        emit ShadowCollect(msg.sender, recipient, tickLower, tickUpper, amount0, amount1);
     }
+
+    /// @inheritdoc IUniswapV3PoolActions
+    function nFPCollect(
+        address owner, // address that calls NonfungiblePositionManager
+        address recipient, // usually NonfungiblePositionManager
+        int24 tickLower,
+        int24 tickUpper,
+        uint128 amount0Requested,
+        uint128 amount1Requested
+    ) external override lock returns (uint128 amount0, uint128 amount1) {
+        // we don't need to checkTicks here, because invalid positions will never have non-zero tokensOwed{0,1}
+        Position.Info storage position = positions.get(msg.sender, tickLower, tickUpper);
+
+        amount0 = amount0Requested > position.tokensOwed0 ? position.tokensOwed0 : amount0Requested;
+        amount1 = amount1Requested > position.tokensOwed1 ? position.tokensOwed1 : amount1Requested;
+
+        if (amount0 > 0) {
+            position.tokensOwed0 -= amount0;
+            TransferHelper.safeTransfer(token0, recipient, amount0);
+        }
+        if (amount1 > 0) {
+            position.tokensOwed1 -= amount1;
+            TransferHelper.safeTransfer(token1, recipient, amount1);
+        }
+
+        emit ShadowCollect(owner, recipient, tickLower, tickUpper, amount0, amount1);
+    }    
 
     /// @inheritdoc IUniswapV3PoolActions
     /// @dev noDelegateCall is applied indirectly via _modifyPosition
@@ -520,6 +722,13 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
         int24 tickUpper,
         uint128 amount
     ) external override lock returns (uint256 amount0, uint256 amount1) {
+
+        // Create LiquidityLocalVars struct
+        LiquidityLocalVars memory vars;
+        // Set position liquidity in range and total liquidity in range before values, before the position is modified
+        vars.liquidityInRangeValues.positionLiquidityInRange = (slot0.tick >= tickLower && slot0.tick < tickUpper) ? amount : 0;
+        vars.liquidityInRangeValues.totalLiquidityInRangeBefore = liquidity; 
+
         (Position.Info storage position, int256 amount0Int, int256 amount1Int) =
             _modifyPosition(
                 ModifyPositionParams({
@@ -533,6 +742,11 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
         amount0 = uint256(-amount0Int);
         amount1 = uint256(-amount1Int);
 
+        // Initialize FeesEarned struct and set values with tokensOwed before the position is updated
+        FeesEarned memory feesEarned;
+        feesEarned.token0 = position.tokensOwed0;
+        feesEarned.token1 = position.tokensOwed1;
+
         if (amount0 > 0 || amount1 > 0) {
             (position.tokensOwed0, position.tokensOwed1) = (
                 position.tokensOwed0 + uint128(amount0),
@@ -540,7 +754,72 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
             );
         }
 
-        emit Burn(msg.sender, tickLower, tickUpper, amount, amount0, amount1);
+        // Populate the rest of the LiquidityLocalVars struct
+        // Set total liquidity in range after value
+        vars.liquidityInRangeValues.totalLiquidityInRangeAfter = liquidity;
+        // getPositionDetails uses msg.sender as owner param because caller doesn't use NonfungiblePositionManager
+        vars.positionDetails = getPositionDetails(msg.sender, msg.sender, tickLower, tickUpper, amount, amount0, amount1);
+        vars.positionFeeValues = getPositionFeeValues(tickLower, tickUpper);
+        vars.poolInfo = getPoolInfo();
+        getTickSpacesLiquidity(tickLower, tickUpper, vars.positionDetails.positionId);
+
+        emit ShadowBurn(
+            vars.positionDetails, feesEarned, vars.positionFeeValues, vars.liquidityInRangeValues, vars.poolInfo, slot0.tick
+        );
+    }
+
+    /// @inheritdoc IUniswapV3PoolActions
+    /// @dev noDelegateCall is applied indirectly via _modifyPosition
+    function nFPBurn(
+        address owner, // address that calls NonfungiblePositionManager
+        int24 tickLower,
+        int24 tickUpper,
+        uint128 amount
+    ) external override lock returns (uint256 amount0, uint256 amount1) {
+
+        // Create LiquidityLocalVars struct
+        LiquidityLocalVars memory vars;
+        // Set position liquidity in range and total liquidity in range before values, before the position is modified
+        vars.liquidityInRangeValues.positionLiquidityInRange = (slot0.tick >= tickLower && slot0.tick < tickUpper) ? amount : 0;
+        vars.liquidityInRangeValues.totalLiquidityInRangeBefore = liquidity; 
+
+        (Position.Info storage position, int256 amount0Int, int256 amount1Int) =
+            _modifyPosition(
+                ModifyPositionParams({
+                    owner: msg.sender,
+                    tickLower: tickLower,
+                    tickUpper: tickUpper,
+                    liquidityDelta: -int256(amount).toInt128()
+                })
+            );
+
+        amount0 = uint256(-amount0Int);
+        amount1 = uint256(-amount1Int);
+
+        // Initialize FeesEarned struct and set values with tokensOwed before the position is updated
+        FeesEarned memory feesEarned;
+        feesEarned.token0 = position.tokensOwed0;
+        feesEarned.token1 = position.tokensOwed1;
+
+        if (amount0 > 0 || amount1 > 0) {
+            (position.tokensOwed0, position.tokensOwed1) = (
+                position.tokensOwed0 + uint128(amount0),
+                position.tokensOwed1 + uint128(amount1)
+            );
+        }
+
+        // Populate the rest of the LiquidityLocalVars struct
+        // Set total liquidity in range after value
+        vars.liquidityInRangeValues.totalLiquidityInRangeAfter = liquidity;
+        // getPositionDetails uses owner passed from NonfungiblePositionManager as owner param to identify the actual caller
+        vars.positionDetails = getPositionDetails(owner, msg.sender, tickLower, tickUpper, amount, amount0, amount1);
+        vars.positionFeeValues = getPositionFeeValues(tickLower, tickUpper);
+        vars.poolInfo = getPoolInfo();
+        getTickSpacesLiquidity(tickLower, tickUpper, vars.positionDetails.positionId);
+
+        emit ShadowBurn(
+            vars.positionDetails, feesEarned, vars.positionFeeValues, vars.liquidityInRangeValues, vars.poolInfo, slot0.tick
+        );
     }
 
     struct SwapCache {
@@ -716,6 +995,26 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
                             cache.tickCumulative,
                             cache.blockTimestamp
                         );
+
+                    // Capture the state of the tick after it is crossed
+                    Tick.Info storage info = ticks[step.tickNext];
+
+                    // Math to convert X128 to E18 for downstream data storage
+                    uint256 feeGrowthOutside0E18 = (info.feeGrowthOutside0X128 * 10**18) >> 128;
+                    uint256 feeGrowthOutside1E18 = (info.feeGrowthOutside1X128 * 10**18) >> 128;
+
+                    // Emit TickCrossed event
+                    emit TickCrossed(
+                        step.tickNext,
+                        info.liquidityGross,
+                        info.liquidityNet,
+                        feeGrowthOutside0E18,
+                        feeGrowthOutside1E18,
+                        info.tickCumulativeOutside,
+                        info.secondsPerLiquidityOutsideX128,
+                        info.secondsOutside
+                    );
+
                     // if we're moving leftward, we interpret liquidityNet as the opposite sign
                     // safe because liquidityNet cannot be type(int128).min
                     if (zeroForOne) liquidityNet = -liquidityNet;
@@ -783,8 +1082,26 @@ contract UniswapV3Pool is IUniswapV3Pool, NoDelegateCall {
             IUniswapV3SwapCallback(msg.sender).uniswapV3SwapCallback(amount0, amount1, data);
             require(balance1Before.add(uint256(amount1)) <= balance1(), 'IIA');
         }
+        
+        // Math to convert X128 to E18 for downstream data storage
+        uint256 feeGrowthGlobal0E18 = (feeGrowthGlobal0X128 * 10**18) >> 128;
+        uint256 feeGrowthGlobal1E18 = (feeGrowthGlobal1X128 * 10**18) >> 128;
 
-        emit Swap(msg.sender, recipient, amount0, amount1, state.sqrtPriceX96, state.liquidity, state.tick);
+        // Create SwapInfo struct and store basic info about the swap
+        SwapInfo memory swapInfo;
+        swapInfo.sender = msg.sender;
+        swapInfo.recipient = recipient;
+        swapInfo.amount0 = amount0;
+        swapInfo.amount1 = amount1;
+        swapInfo.sqrtPriceX96 = state.sqrtPriceX96;
+        swapInfo.liquidity = state.liquidity;
+        swapInfo.tick = state.tick;
+
+        // Create PoolInfo struct and store basic info about the pool and tokens
+        PoolInfo memory poolInfo = getPoolInfo();
+
+        // updated Swap event to ShadowSwap, which includes feeGrowthGlobal
+        emit ShadowSwap(swapInfo, poolInfo, feeGrowthGlobal0E18, feeGrowthGlobal1E18);        
         slot0.unlocked = true;
     }
 
