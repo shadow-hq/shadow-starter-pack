@@ -81,7 +81,7 @@ impl<E: EtherscanResource, A: ArtifactsResource, S: ShadowResource, P: JsonRpcCl
         let contract_creation_metadata = self.fetch_contract_creation_metadata().await?;
 
         // Fetch the constructor arguments from Etherscan
-        let constructor_arguments = self.fetch_constructor_arguments().await?;
+        let constructor_arguments = "".to_string();
 
         // Fetch the contract creation transaction
         let contract_creation_transaction = self
